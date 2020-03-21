@@ -17,3 +17,6 @@ copter.calibrate()
 
 if coper.armePrecheck() == "success":
     copter.fly()
+
+"""
+"""
