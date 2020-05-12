@@ -5,9 +5,12 @@
  * then off for one second, repeatedly.
  */
 
-#include "Arduino.h"
+#include <Arduino.h>
+#include <Wire.h>
 #include <IRremote.h>
 #include <Servo.h>
+#include "bmp280.h"
+#include "sensor.h"
 
 const int RECV_PIN = 4;
 int speed_1 = 1300;
@@ -43,9 +46,15 @@ void esc_output_single_trim();
 
 void setup()
 {
-  // Serial.begin(9600);115200
+  Wire.begin();
+
   Serial.begin(115200);
-  irrecv.enableIRIn(); // Start the receiver
+  if(!Serial);
+  delay(1000);
+  Serial.print("Initialized!");
+
+  irrecv.enableIRIn();
+
   servo1.attach(5);
   servo2.attach(6);
   servo3.attach(9);
@@ -55,6 +64,29 @@ void setup()
   servo2.writeMicroseconds(speed_2);
   servo3.writeMicroseconds(speed_3);
   servo4.writeMicroseconds(speed_4);
+
+
+  bmp.delay_ms = delay_ms;
+  bmp.dev_id = BMP280_I2C_ADDR_SEC; // device addres = 0x77
+  bmp.intf = BMP280_I2C_INTF; // I2C Interface
+  bmp.read = i2c_reg_read;
+  bmp.write = i2c_reg_write;
+  rslt = bmp280_init(&bmp);
+  print_rslt(" bmp280_init status", rslt);
+  /* Always read the current settings before writing, especially when
+   * all the configuration is not modified
+   */
+  rslt = bmp280_get_config(&conf, &bmp);
+  print_rslt(" bmp280_get_config status", rslt);
+  conf.filter = BMP280_FILTER_COEFF_2; // Filter Settings
+  conf.os_temp = BMP280_OS_4X; // Temperature Resoluition
+  conf.os_pres = BMP280_OS_NONE; // Pressure Resolution
+  conf.odr = BMP280_ODR_1000_MS; // Sample Rate
+  rslt = bmp280_set_config(&conf, &bmp);
+  print_rslt(" bmp280_set_config status", rslt);
+  /* Always set the power mode after setting the configuration */
+  rslt = bmp280_set_power_mode(BMP280_NORMAL_MODE, &bmp);
+  print_rslt(" bmp280_set_power_mode status", rslt);
 }
 
 void loop() {
@@ -64,7 +96,7 @@ void loop() {
       results.value = prev;
     }
     esc_output_single_trim();
-    irrecv.resume(); // Receive the next value
+    irrecv.resume(); // Receive the next IR value
   }
 }
 
@@ -85,8 +117,39 @@ void serial_output() {
     case UNKNOWN:
       Serial.print("UNKNOWN: ");
       break;
+    default:
+      break;
   }
   Serial.println(results.value, HEX);
+
+  /* Reading the raw data from sensor */
+  rslt = bmp280_get_uncomp_data(&ucomp_data, &bmp);
+
+  /* Getting the 32 bit compensated temperature */
+  rslt = bmp280_get_comp_temp_32bit(&temp32, ucomp_data.uncomp_temp, &bmp);
+
+  /* Getting the compensated temperature as floating point value */
+  rslt = bmp280_get_comp_temp_double(&temp, ucomp_data.uncomp_temp, &bmp);
+
+  /* Getting the compensated pressure using 32 bit precision */
+  rslt = bmp280_get_comp_pres_32bit(&pres32, ucomp_data.uncomp_press, &bmp);
+
+  /* Getting the compensated pressure as floating point value */
+  rslt = bmp280_get_comp_pres_double(&pres, ucomp_data.uncomp_press, &bmp);
+  
+  Serial.print("UT: ");
+  Serial.println(ucomp_data.uncomp_temp);
+  Serial.print("T32: ");
+  Serial.println(temp32);
+  Serial.print("T: ");
+  Serial.println(temp);
+  Serial.println();
+  Serial.print("UP: ");
+  Serial.println(ucomp_data.uncomp_press);
+  Serial.print("P32: ");
+  Serial.println(pres32);
+  Serial.print("P: ");
+  Serial.println(pres);
 }
 
 void esc_output_pair_trim() {
