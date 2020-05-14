@@ -42,13 +42,6 @@ int8_t i2c_reg_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint
 {
 
   /* Implement the I2C write routine according to the target machine. */
-  Serial.println("i2c_reg_write");
-  Serial.println(i2c_addr,HEX);
-  Serial.println(reg_addr,HEX);
-  //Serial.println(reg_data);
-  Serial.println(*reg_data,HEX);
-  Serial.println(length);
-  
   Wire.beginTransmission(i2c_addr);
   for (uint16_t i = 0; i<length;i++) {
     Wire.write(reg_addr);
@@ -78,13 +71,6 @@ int8_t i2c_reg_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint1
 {
 
   /* Implement the I2C read routine according to the target machine. */
-  Serial.println("i2c_reg_read");
-  Serial.println(i2c_addr,HEX);
-  Serial.println(reg_addr,HEX);
-  //Serial.println(reg_data);
-  Serial.println(*reg_data,HEX);
-  Serial.println(length);
-
   Wire.beginTransmission(i2c_addr);
   Wire.write(reg_addr);
   Wire.endTransmission();

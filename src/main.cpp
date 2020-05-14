@@ -1,8 +1,17 @@
 /**
  * IR Flight Controll
  *
- * Turns on an LED on for one second,
- * then off for one second, repeatedly.
+ * @file	main.cpp
+ * @date	2020-05-12
+ * @version	v0.2
+ * 
+ * Features:
+ * - IR Control
+ *       - speed-up, speed-down
+ *       - trim pair, trim single
+ *       - max speed, halt
+ * - Sensor Control
+ *       - Temperature, Pressure
  */
 
 #include <Arduino.h>
@@ -19,39 +28,30 @@ int speed_3 = 1300;
 int speed_4 = 1300;
 
 IRrecv irrecv(RECV_PIN);
+decode_results IR_Signal;
 
-Servo servo1;
-Servo servo2;
-Servo servo3;
-Servo servo4;
-
-decode_results results;
-
-const long TRIM_VOR = 0x407f708f;
-const long TRIM_RECHTS = 0x407fe01f;
-const long TRIM_RUECK = 0x407f10ef;
-const long TRIM_LINKS = 0x407fa857;
-const long SPEED_UP = 0x407FF00F;
-const long SPEED_DOWN = 0x407f58a7;
-const long HALT = 0x407F40BF;
-const long MAX = 0x407F807F;
+Servo servo1, servo2, servo3, servo4;
 
 long prev = 0x00000000;
 
 boolean update_esc = false;
+boolean esc_single_trim = false;
 
-void serial_output();
-void esc_output_pair_trim();
-void esc_output_single_trim();
+void serial_output(decode_results IR_Signal, long prev);
+void esc_IR_control(decode_results *IR_Signal, boolean &update_esc, long &prev);
+void get_sensor_data();
+void calc_PID_calibration();
+void esc_PID_trim();
 
-void setup()
-{
+void setup() {
   Wire.begin();
 
   Serial.begin(115200);
-  if(!Serial);
-  delay(1000);
+  if(!Serial) {}
+ 
   Serial.print("Initialized!");
+
+  pinMode(LED_BUILTIN, OUTPUT);
 
   irrecv.enableIRIn();
 
@@ -90,18 +90,21 @@ void setup()
 }
 
 void loop() {
-  if (irrecv.decode(&results)) {
-    serial_output();
-    if (results.value == 0xFFFFFFFF) {
-      results.value = prev;
+  if (irrecv.decode(&IR_Signal)) {
+    serial_output(IR_Signal, prev);
+    if (IR_Signal.value == 0xFFFFFFFF) {
+      IR_Signal.value = prev;
     }
-    esc_output_single_trim();
+    esc_IR_control(&IR_Signal, update_esc, prev);
     irrecv.resume(); // Receive the next IR value
   }
+  get_sensor_data();
+  calc_PID_calibration();
+  esc_PID_trim();
 }
 
-void serial_output() {
-  switch (results.decode_type) {
+void serial_output(decode_results IR_Signal, long prev) {
+  switch (IR_Signal.decode_type) {
     case NEC:
       Serial.print("NEC: ");
       break;
@@ -120,23 +123,9 @@ void serial_output() {
     default:
       break;
   }
-  Serial.println(results.value, HEX);
+  Serial.println(IR_Signal.value, HEX);
+  Serial.println(prev, HEX);
 
-  /* Reading the raw data from sensor */
-  rslt = bmp280_get_uncomp_data(&ucomp_data, &bmp);
-
-  /* Getting the 32 bit compensated temperature */
-  rslt = bmp280_get_comp_temp_32bit(&temp32, ucomp_data.uncomp_temp, &bmp);
-
-  /* Getting the compensated temperature as floating point value */
-  rslt = bmp280_get_comp_temp_double(&temp, ucomp_data.uncomp_temp, &bmp);
-
-  /* Getting the compensated pressure using 32 bit precision */
-  rslt = bmp280_get_comp_pres_32bit(&pres32, ucomp_data.uncomp_press, &bmp);
-
-  /* Getting the compensated pressure as floating point value */
-  rslt = bmp280_get_comp_pres_double(&pres, ucomp_data.uncomp_press, &bmp);
-  
   Serial.print("UT: ");
   Serial.println(ucomp_data.uncomp_temp);
   Serial.print("T32: ");
@@ -152,66 +141,90 @@ void serial_output() {
   Serial.println(pres);
 }
 
-void esc_output_pair_trim() {
-  switch (results.value) {
-    case HALT:
-      prev = HALT;
+void esc_IR_control(decode_results *IR_Signal, boolean &update_esc, long &prev) {
+  switch (IR_Signal->value) {
+    case NAD_OFF: // SPEED OFF
+      prev = NAD_OFF;
       update_esc = true;
       speed_1 = 1300;
       speed_2 = 1300;
       speed_3 = 1300;
       speed_4 = 1300;
       break;
-    case MAX:
-      prev = MAX;
+    case NAD_ON: // MAX Speed
+      prev = NAD_ON;
       update_esc = true;
       speed_1 = 2000;
       speed_2 = 2000;
       speed_3 = 2000;
       speed_4 = 2000;
       break;
-    case SPEED_UP:
-      prev = SPEED_UP;
+    case NAD_PRESET_RIGHT: // Speed Up
+      //prev = NAD_PRESET_RIGHT; 
       update_esc = true;
       speed_1 += 25;
       speed_2 += 25;
       speed_3 += 25;
       speed_4 += 25;
       break;
-    case SPEED_DOWN:
-      prev = SPEED_DOWN;
+    case NAD_PRESET_LEFT: // Speed Down
+      // prev = NAD_PRESET_LEFT;
       update_esc = true;
       speed_1 -= 25;
       speed_2 -= 25;
       speed_3 -= 25;
       speed_4 -= 25;
       break;
-    case TRIM_VOR: // B, C zu stark
-      prev = TRIM_VOR;
+    case NAD_SOURCE_UP: 
+      prev = NAD_SOURCE_UP;
       update_esc = true;
-      speed_2 -= 1;
-      speed_3 -= 1;
+      if (esc_single_trim) {  // B zu stark
+        speed_2 -= 1;
+      } else {  // B, C zu stark
+        speed_2 -= 1;
+        speed_3 -= 1;
+      }
       break;
-    case TRIM_RUECK: // A, D zu stark
-      prev = TRIM_RUECK;
+    case NAD_VOL_DOWN: 
+      prev = NAD_VOL_DOWN;
       update_esc = true;
-      speed_1 -= 1;
-      speed_4 -= 1;
+      if (esc_single_trim) { // A stark
+        speed_1 -= 1;
+      } else { // A, D zu stark
+        speed_1 -= 1;
+        speed_4 -= 1;
+      }
+        break;
+    case NAD_VOL_UP: 
+      prev = NAD_VOL_UP;
+      update_esc = true;
+      if (esc_single_trim) { // C zu stark
+        speed_3 -= 1;
+      } else {  // A, C zu stark
+        speed_1 -= 1;
+        speed_3 -= 1;
+      }
       break;
-    case TRIM_RECHTS: // A, C zu stark
-      prev = TRIM_RECHTS;
+    case NAD_SOURCE_DOWN: 
+      prev = NAD_SOURCE_DOWN;
       update_esc = true;
-      speed_1 -= 1;
-      speed_3 -= 1;
+      if (esc_single_trim) { // D zu stark
+        speed_4 -= 1;
+      } else {  // B, D zu stark
+        speed_2 -= 1;
+        speed_4 -= 1;
+      }
       break;
-    case TRIM_LINKS: // B, D zu stark
-      prev = TRIM_LINKS;
-      update_esc = true;
-      speed_2 -= 1;
-      speed_4 -= 1;
+    case NAD_MUTE:
+      if (esc_single_trim) {
+        digitalWrite(LED_BUILTIN, HIGH);
+      } else {
+        digitalWrite(LED_BUILTIN, LOW);
+      }
+      esc_single_trim = !esc_single_trim;
       break;
     default:
-      prev = results.value;
+      prev = IR_Signal->value;
       update_esc = false;
       break;
   }
@@ -223,71 +236,27 @@ void esc_output_pair_trim() {
     servo4.writeMicroseconds(constrain(speed_4, 1300, 2000));
   }
 }
-  
-void esc_output_single_trim() {
-  switch (results.value) {
-    case HALT:
-      prev = HALT;
-      update_esc = true;
-      speed_1 = 1300;
-      speed_2 = 1300;
-      speed_3 = 1300;
-      speed_4 = 1300;
-      break;
-    case MAX:
-      prev = MAX;
-      update_esc = true;
-      speed_1 = 2000;
-      speed_2 = 2000;
-      speed_3 = 2000;
-      speed_4 = 2000;
-      break;
-    case SPEED_UP:
-      prev = SPEED_UP;
-      update_esc = true;
-      speed_1 += 25;
-      speed_2 += 25;
-      speed_3 += 25;
-      speed_4 += 25;
-      break;
-    case SPEED_DOWN:
-      prev = SPEED_DOWN;
-      update_esc = true;
-      speed_1 -= 25;
-      speed_2 -= 25;
-      speed_3 -= 25;
-      speed_4 -= 25;
-      break;
-    case TRIM_VOR: // B zu stark
-      prev = TRIM_VOR;
-      update_esc = true;
-      speed_2 -= 1;
-      break;
-    case TRIM_RUECK: // A stark
-      prev = TRIM_RUECK;
-      update_esc = true;
-      speed_1 -= 1;
-      break;
-    case TRIM_RECHTS: // C zu stark
-      prev = TRIM_RECHTS;
-      update_esc = true;
-      speed_3 -= 1;
-      break;
-    case TRIM_LINKS: // D zu stark
-      prev = TRIM_LINKS;
-      update_esc = true;
-      speed_4 -= 1;
-      break;
-    default:
-      prev = results.value;
-      update_esc = false;
-      break;
-  }
-  if (update_esc) {
-    Serial.println("update ESC....");
-    servo1.writeMicroseconds(constrain(speed_1, 1300, 2000));
-    servo2.writeMicroseconds(constrain(speed_2, 1300, 2000));
-    servo3.writeMicroseconds(constrain(speed_3, 1300, 2000));
-    servo4.writeMicroseconds(constrain(speed_4, 1300, 2000));
-  }
+
+void get_sensor_data() {
+
+  /* Reading the raw data from sensor */
+  rslt = bmp280_get_uncomp_data(&ucomp_data, &bmp);
+
+  /* Getting the 32 bit compensated temperature */
+  rslt = bmp280_get_comp_temp_32bit(&temp32, ucomp_data.uncomp_temp, &bmp);
+
+  /* Getting the compensated temperature as floating point value */
+  rslt = bmp280_get_comp_temp_double(&temp, ucomp_data.uncomp_temp, &bmp);
+
+  /* Getting the compensated pressure using 32 bit precision */
+  rslt = bmp280_get_comp_pres_32bit(&pres32, ucomp_data.uncomp_press, &bmp);
+
+  /* Getting the compensated pressure as floating point value */
+  rslt = bmp280_get_comp_pres_double(&pres, ucomp_data.uncomp_press, &bmp);
+}
+void calc_PID_calibration() {
+
+}
+void esc_PID_trim() {
+
 }
