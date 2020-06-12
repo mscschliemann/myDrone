@@ -1,15 +1,13 @@
 /**
 *
-* @file	bmp280.c
-* @date	2020-01-10
-* @version	v3.3.4
+* @file	sensor.cpp
+* @date	2020-05-15
+* @version	v1.0.0
 *
 */
-#include "bmp280.h"
-#include <Arduino.h>
-#include <Wire.h>
+/********************** Function Implementation ************************/
 
-/********************** function implementations ************************/
+
 
 /*!
  *  @brief Function that creates a mandatory delay required in some of the APIs such as "bmg250_soft_reset",
@@ -19,8 +17,7 @@
  *  @return void.
  *
  */
-void delay_ms(uint32_t period_ms)
-{
+void delay_ms(uint32_t period_ms) {
     /* Implement the delay routine according to the target machine */
     delay(period_ms);
 }
@@ -38,20 +35,10 @@ void delay_ms(uint32_t period_ms)
  *  @retval >0 -> Failure Info
  *
  */
-int8_t i2c_reg_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint16_t length)
-{
-
+int8_t i2c_reg_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint16_t length) {
   /* Implement the I2C write routine according to the target machine. */
-  Wire.beginTransmission(i2c_addr);
-  for (uint16_t i = 0; i<length;i++) {
-    Wire.write(reg_addr);
-    Wire.write(*reg_data);
-    reg_data++;
-    reg_addr++;
-  }
-  Wire.endTransmission();    // stop transmitting
-  //return -1;
-  return 0;
+  rslt = I2Cdev::writeBytes(i2c_addr, reg_addr, (uint8_t) length, reg_data);
+  return (rslt>=0)?0:rslt;
 }
 
 /*!
@@ -67,23 +54,13 @@ int8_t i2c_reg_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint
  *  @retval >0 -> Failure Info
  *
  */
-int8_t i2c_reg_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint16_t length)
-{
-
+int8_t i2c_reg_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint16_t length) {
   /* Implement the I2C read routine according to the target machine. */
-  Wire.beginTransmission(i2c_addr);
-  Wire.write(reg_addr);
-  Wire.endTransmission();
-  Wire.requestFrom(i2c_addr, length);
-  while (Wire.available()) {
-    *reg_data = Wire.read();
-    reg_data++;
-  }
-  //return -1;
-  return 0;
+/*   rslt = I2Cdev::readBytes(i2c_addr, reg_addr, (uint8_t) length, reg_data);
+  return (rslt>=0)?0:rslt; */
 }
 
-/*!
+/*! not implemented
  *  @brief Function for writing the sensor's registers through SPI bus.
  *
  *  @param[in] cs           : Chip select to enable the sensor.
@@ -104,7 +81,7 @@ int8_t spi_reg_write(uint8_t cs, uint8_t reg_addr, uint8_t *reg_data, uint16_t l
     return -1;
 }
 
-/*!
+/*! not implemented
  *  @brief Function for reading the sensor's registers through SPI bus.
  *
  *  @param[in] cs       : Chip select to enable the sensor.
@@ -132,9 +109,8 @@ int8_t spi_reg_read(uint8_t cs, uint8_t reg_addr, uint8_t *reg_data, uint16_t le
  *
  *  @return void.
  */
-void print_rslt(const char api_name[], int8_t rslt)
-{
-    if (rslt != BMP280_OK)
+void print_rslt(const char api_name[], int8_t rslt) {
+/*     if (rslt != BMP280_OK)
     {
         Serial.println(api_name);
         if (rslt == BMP280_E_NULL_PTR)
@@ -159,9 +135,12 @@ void print_rslt(const char api_name[], int8_t rslt)
         }
         else
         {
-            /* For more error codes refer "*_defs.h" */
+            
             Serial.print("Unknown error code");
             Serial.println(rslt);
         }
-    }
+    } */
 }
+
+// InvenSense MPU9250
+
